@@ -21,7 +21,10 @@ void OrderBook::addOrder(const Order& order) {
             }
             Order& book_order = orders_at_level.front();
             std::uint64_t match_qty = std::min(incoming.quantity, book_order.quantity);
-            std::cout<<"Trade Executed! "<< match_qty <<" @ "<< ask_price <<std::endl;
+            
+            logTrade(incoming.trader_id, book_order.trader_id, ask_price, match_qty);
+            std::cout << "Trade: " << match_qty << " @ " << ask_price << std::endl;
+            
             incoming.quantity-=match_qty;
             book_order.quantity -=match_qty;
             if(book_order.quantity == 0){
@@ -49,8 +52,8 @@ void OrderBook::addOrder(const Order& order) {
             Order& book_order = orders_at_level.front();
             std::uint64_t match_qty = std::min(incoming.quantity, book_order.quantity);
 
-            std::cout << "Trade Executed! " << match_qty << " @ " << bid_price << std::endl;
-
+            logTrade(incoming.trader_id, book_order.trader_id, bid_price, match_qty);
+            std::cout << "Trade: " << match_qty << " @ " << bid_price << std::endl;
             incoming.quantity -= match_qty;
             book_order.quantity -= match_qty;
 
@@ -92,62 +95,70 @@ void OrderBook::print() const {
     }
 }
 void OrderBook::cancelOrder(std::uint64_t orderId) {
-   
-    for (auto& [price, list] : bids_) {
-        for (auto it = list.begin(); it != list.end(); ++it) {
-            if (it->order_id == orderId) {
-                list.erase(it);
+    for (auto it = bids_.begin(); it != bids_.end(); ++it) {
+        auto& list = it->second;
+        for (auto orderIt = list.begin(); orderIt != list.end(); ++orderIt) {
+            if (orderIt->order_id == orderId) {
+                list.erase(orderIt); 
+                if (list.empty()) {
+                    bids_.erase(it); 
+                }
                 return; 
             }
         }
     }
 
-    
-    for (auto& [price, list] : asks_) {
-        for (auto it = list.begin(); it != list.end(); ++it) {
-            if (it->order_id == orderId) {
-                list.erase(it);
+    for (auto it = asks_.begin(); it != asks_.end(); ++it) {
+        auto& list = it->second;
+        for (auto orderIt = list.begin(); orderIt != list.end(); ++orderIt) {
+            if (orderIt->order_id == orderId) {
+                list.erase(orderIt);
+                
+                if (list.empty()) {
+                    asks_.erase(it);
+                }
                 return;
             }
         }
     }
-    std::cout<<"Order NOT FOUND"<<std::endl;
     
+    std::cout << "Order NOT FOUND" << std::endl;
 }
-
 void OrderBook::modifyOrder(OrderModification mod) {
-    // 1. Search Bids
-    for (auto& [price,list] : bids_) { // Using 'pair' to be safe across C++ versions
-        for (auto it = list.begin(); it != list.end(); ++it) {
-            if (it->order_id == mod.order_id) {
-                // Found it! Capture the old order's immutable data
-                Order newOrder = *it;
-                
-                // Update with new values
+    for (auto it = bids_.begin(); it != bids_.end(); ++it) {
+        auto& list = it->second;
+        for (auto orderIt = list.begin(); orderIt != list.end(); ++orderIt) {
+            if (orderIt->order_id == mod.order_id) {
+                Order newOrder = *orderIt;
                 newOrder.price = mod.new_price;
                 newOrder.quantity = mod.new_quantity;
-                newOrder.side = mod.new_side; // Explicitly update side
+                newOrder.side = mod.new_side;
 
-                // Remove the old order (Cancel)
-                list.erase(it);
-
-                // Add the new order (Add) - This triggers matching logic!
+                list.erase(orderIt);
+                
+                if (list.empty()) {
+                    bids_.erase(it);
+                }
+                
                 addOrder(newOrder);
                 return;
             }
         }
     }
 
-    // 2. Search Asks (Symmetric)
-    for (auto& [price,list] : asks_) {
-        for (auto it = list.begin(); it != list.end(); ++it) {
-            if (it->order_id == mod.order_id) {
-                Order newOrder = *it;
+    for (auto it = asks_.begin(); it != asks_.end(); ++it) {
+        auto& list = it->second;
+        for (auto orderIt = list.begin(); orderIt != list.end(); ++orderIt) {
+            if (orderIt->order_id == mod.order_id) {
+                Order newOrder = *orderIt;
                 newOrder.price = mod.new_price;
                 newOrder.quantity = mod.new_quantity;
                 newOrder.side = mod.new_side;
 
-                list.erase(it);
+                list.erase(orderIt);
+                if (list.empty()) {
+                    asks_.erase(it);
+                }
                 addOrder(newOrder);
                 return;
             }
