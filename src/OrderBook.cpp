@@ -204,6 +204,13 @@ std::vector<OrderBook::Level> OrderBook::askLevels(std::size_t depth) const {
 // ===========================================================================
 
 bool          OrderBook::contains(std::uint64_t id) const { return index_.count(id) != 0; }
+
+std::optional<Order> OrderBook::getOrder(std::uint64_t id) const {
+    auto found = index_.find(id);
+    if (found == index_.end()) return std::nullopt;
+    return *found->second.it;     // copy of the live order (current remaining qty).
+}
+
 std::size_t   OrderBook::size() const                     { return index_.size(); }
 bool          OrderBook::empty() const                    { return index_.empty(); }
 std::uint64_t OrderBook::totalVolumeTraded() const        { return total_volume_traded_; }

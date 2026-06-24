@@ -60,6 +60,9 @@ public:
 
     // ---- Introspection / statistics -------------------------------------
     bool          contains(std::uint64_t order_id) const;
+    // Fetch a live copy of a resting order (with its current remaining qty),
+    // or nullopt if it isn't on the book. O(1).
+    std::optional<Order> getOrder(std::uint64_t order_id) const;
     std::size_t   size() const;                 // number of resting orders.
     bool          empty() const;
     std::uint64_t totalVolumeTraded() const;    // cumulative units matched.

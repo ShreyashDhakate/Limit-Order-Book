@@ -15,6 +15,15 @@ target_include_directories(lob_core PUBLIC include)
 add_executable(lob src/main.cpp)
 target_link_libraries(lob PRIVATE lob_core)
 
+# Live web-app server (browser trading terminal). cpp-httplib is header-only.
+find_package(Threads REQUIRED)
+add_executable(exchange server/server.cpp server/MarketSimulator.cpp)
+target_include_directories(exchange PRIVATE server)
+target_link_libraries(exchange PRIVATE lob_core Threads::Threads)
+if(WIN32)
+    target_link_libraries(exchange PRIVATE ws2_32 wsock32)
+endif()
+
 # Unit tests (run with: ctest  or  ./lob_tests).
 enable_testing()
 add_executable(lob_tests tests/test_orderbook.cpp)

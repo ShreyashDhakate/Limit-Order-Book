@@ -4,6 +4,8 @@ lob.exe
 lob_tests
 lob_tests.exe
 lob_test_build.exe
+server/exchange.exe
+server/exchange
 *.o
 *.obj
 build/
@@ -11,3 +13,4 @@ build_err.txt
 
 # Generated output
 trades.csv
+session_report.csv

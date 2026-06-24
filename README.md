@@ -4,6 +4,8 @@ A clean, well-tested **limit order book** with a **price/time-priority matching 
 
 The design favours the things a trading-systems interviewer actually asks about — **O(1) cancel/modify**, correct **price-time priority**, and proper **order-type semantics** (GTC / IOC / FOK / Market) — while keeping the code at a readable, idiomatic level (no lock-free wizardry, no template soup).
 
+> **It also ships as a live web app.** The same C++ engine powers a browser "trading terminal" — a live order-book ladder, an order-entry ticket, ~6 simulated stocks that trade on their own, a time-&-sales tape, and a session P&L report. The web server is C++ too (cpp-httplib). See **[Live web app](#live-web-app-exchange-ui)**.
+
 ```
         ===== ORDER BOOK =====
    PRICE | TOTAL QTY | #ORDERS
@@ -25,6 +27,7 @@ B      98 |        30 |       1
 - [How matching works](#how-matching-works-the-flow)
 - [Build & run](#build--run)
 - [Command grammar](#command-grammar)
+- [Live web app](#live-web-app-exchange-ui)
 - [Public API](#public-api)
 - [Project layout](#project-layout)
 - [Tests](#tests)
@@ -186,6 +189,63 @@ trade_id,buy_order_id,sell_order_id,buyer_id,seller_id,price,quantity
 
 ---
 
+## Live web app (exchange UI)
+
+The same engine also runs as a **browser-based trading terminal**, with a **C++ HTTP server** (cpp-httplib, a single vendored header) in front of it. There is no separate backend language and no frontend build step — your C++ matching engine *is* the backend.
+
+```
+            Browser UI  (server/public/index.html — HTML/CSS/JS, polls every ~0.9s)
+                  |   REST over HTTP
+                  v
+        C++ HTTP server  (server/server.cpp, cpp-httplib)
+                  |
+        MarketSimulator  (server/MarketSimulator.cpp)
+          • one OrderBook per symbol  (the engine above)
+          • background thread injects market-maker + taker flow -> prices move live
+          • tracks the user's orders / fills -> P&L report
+          • one std::mutex guards all shared state
+```
+
+**What you get in the UI**
+
+- A **watchlist** of ~6 simulated stocks (AAPL, MSFT, TSLA, …) with live prices and % change.
+- A live **order-book ladder** (green bids / red asks, depth bars) and a **price sparkline**.
+- An **order ticket**: BUY/SELL, type = Limit (GTC) / Market / IOC / FOK, price, quantity.
+- A **time & sales** tape, a **my open orders** panel (with one-click cancel), and a
+  **session report** (orders, volume, position, VWAP, mark-to-market P&L) with **CSV export**.
+
+**Build & run** (from the project root):
+
+```bash
+# Windows: just double-click server/run.bat, or:
+./server/build.sh                 # compiles server/exchange.exe
+./server/exchange.exe 8080        # then open http://localhost:8080
+```
+
+```powershell
+# Windows / PowerShell, one line:
+g++ -std=c++17 -O2 -Iinclude -Iserver server/server.cpp server/MarketSimulator.cpp src/OrderBook.cpp -o server/exchange.exe -lws2_32 -lwsock32 -pthread
+.\server\exchange.exe 8080
+```
+
+> Linux/macOS: drop `-lws2_32 -lwsock32`, keep `-pthread`. The `exchange.exe` takes an optional `<port>` (default 8080) and `<web_dir>` (default `server/public`).
+
+**REST API** (all prices are integer **cents**):
+
+| Method & path | Purpose |
+|---------------|---------|
+| `GET /api/symbols` | every ticker with last price, % change, BBO, spread |
+| `GET /api/book?symbol=AAPL&depth=10` | L2 ladder for a symbol |
+| `GET /api/trades?symbol=AAPL&limit=30` | recent trade tape |
+| `POST /api/order` | place an order (`symbol, side, type, price, qty`) → fills |
+| `POST /api/cancel` | cancel a resting order (`id`) |
+| `GET /api/myorders` | the user's resting orders |
+| `GET /api/report` / `GET /api/report.csv` | session report (JSON / CSV download) |
+
+**Interview angle:** this shows you can take a systems-level C++ component and expose it as a real service — a background simulation thread, a mutex-guarded shared book, a REST layer, and a client — without abandoning C++. The honest scope: single process, in-memory, polling (not WebSocket), one global lock. The natural upgrades (lock-free input queue, per-symbol sharding, WebSocket push) are listed in [Possible extensions](#possible-extensions).
+
+---
+
 ## Public API
 
 From [`include/OrderBook.h`](include/OrderBook.h):
@@ -221,6 +281,13 @@ LOB/
 ├── src/
 │   ├── OrderBook.cpp    # the matching engine (addOrder/cancel/modify/market-data)
 │   └── main.cpp         # CLI driver — the ONLY file that does I/O
+├── server/              # the live web app (uses the same engine)
+│   ├── httplib.h            # vendored cpp-httplib (single-header HTTP server)
+│   ├── MarketSimulator.h/.cpp  # per-symbol books + live market thread + user/P&L tracking
+│   ├── server.cpp          # REST routes (the HTTP layer)
+│   ├── public/index.html   # the browser trading terminal (no build step)
+│   ├── build.sh            # build the server
+│   └── run.bat             # Windows: build + launch + open browser
 ├── tests/
 │   └── test_orderbook.cpp   # 47 assert-based checks, no framework needed
 ├── data/
@@ -269,10 +336,15 @@ All tests passed.
 
 Natural next steps if you want to push it further (kept out to respect a readable scope):
 
+Engine:
 - **Self-trade prevention** (cancel-newest / cancel-oldest / decrement-both when `trader_id` matches).
 - **Iceberg / hidden orders** (display vs. total quantity).
 - **Stop / stop-limit** orders triggered by last trade price.
 - A **memory pool / arena allocator** for `Order` nodes to cut allocation overhead on the hot path.
 - A **replay/benchmark harness** measuring orders-per-second throughput.
 - **Sequence numbers + an event log** for deterministic replay and crash recovery.
-```
+
+Web app:
+- **WebSocket push** instead of polling, so the UI updates the instant the book changes.
+- **Per-symbol locks** (or a lock-free SPSC queue feeding the engine) to replace the single global mutex.
+- **Persistent accounts** (positions/P&L per user) instead of one in-memory session.
