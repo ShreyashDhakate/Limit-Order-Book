@@ -1,0 +1,13 @@
+# Build artifacts
+lob
+lob.exe
+lob_tests
+lob_tests.exe
+lob_test_build.exe
+*.o
+*.obj
+build/
+build_err.txt
+
+# Generated output
+trades.csv

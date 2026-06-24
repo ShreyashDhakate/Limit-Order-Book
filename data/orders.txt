@@ -1,0 +1,36 @@
+# Sample order flow. Format:
+#   NEW <id> <trader> <BUY|SELL> <price> <qty> [GTC|IOC|FOK|MKT]
+#   MOD <id> <new_price> <new_qty>   |   CXL <id>
+#   PRINT | BBO | DEPTH <n>
+
+# --- Build a resting book (no crosses yet) ---------------------------------
+NEW 1 100 BUY  99  50
+NEW 2 100 BUY  98  30
+NEW 3 101 BUY  99  20          # same price as #1 -> sits behind it (time priority)
+NEW 4 200 SELL 101 40
+NEW 5 200 SELL 102 60
+PRINT
+BBO
+
+# --- A buy that crosses the spread and partially fills ---------------------
+NEW 6 300 BUY 101 25           # lifts 25 of the 40 resting at 101
+DEPTH 3
+
+# --- Immediate-or-cancel: takes what it can, discards the rest -------------
+NEW 7 300 BUY 101 100 IOC      # fills remaining 15 @ 101, drops the other 85
+
+# --- Fill-or-kill that CANNOT fully fill -> does nothing -------------------
+NEW 8 400 SELL 99 1000 FOK     # not enough bid depth, so zero trades
+
+# --- Fill-or-kill that CAN fully fill -------------------------------------
+NEW 9 400 SELL 99 60 FOK       # 50 @ #1 + 10 @ #3, all-or-nothing satisfied
+
+# --- Market order sweeps the best price, never rests ----------------------
+NEW 10 500 SELL 0 10 MKT       # hits the best remaining bid
+
+# --- Cancel + modify --------------------------------------------------------
+CXL 2                          # remove the 98 bid
+MOD 5 100 60                   # reprice ask #5 from 102 -> 100
+
+PRINT
+BBO
