@@ -1,0 +1,155 @@
+/* ===========================================================================
+   terminal.css — layout & widgets for the trading screen (index.html):
+   the 3-column grid, watchlist, symbol header, price chart, order-book ladder,
+   the holdings-aware order ticket, open orders and the trade tape.
+   Depends on app.css for the design tokens.
+   ========================================================================== */
+.terminal { display: grid; grid-template-columns: 266px minmax(0, 1fr) 376px; gap: var(--gap);
+  height: calc(100vh - var(--appbar-h) - 2 * var(--gap)); min-height: 0; }
+.col { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; }
+.col.right { overflow-y: auto; }
+.col.right > .card { flex: none; }
+.grow { flex: 1; min-height: 0; }
+.mtabs { display: none; margin-bottom: 10px; }
+
+/* desktop: let Time & Sales stretch so the order ticket anchors to the bottom,
+   and let the price chart grow to fill the center panel (no dead space). */
+@media (min-width: 1181px) {
+  .col.right { overflow: hidden; }
+  .col.right .tape-card { flex: 1 1 auto; min-height: 130px; }
+  .col.right .tape-card .mini { flex: 1 1 auto; min-height: 0; max-height: none; }
+  .col.center .chart-wrap { flex: 1 1 auto; min-height: 240px; display: flex; flex-direction: column; }
+  .col.center .chart-top { flex: none; }
+  .col.center canvas.chart { flex: 1 1 auto; height: auto; min-height: 0; }
+}
+
+/* ---------------------------------------------------------------- watchlist */
+.wl { min-height: 0; }
+.wl .search { padding: 12px; border-bottom: 1px solid var(--border); }
+.wl-list { overflow-y: auto; flex: 1; }
+.wl-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+  padding: 11px 14px; cursor: pointer; border-left: 3px solid transparent;
+  border-bottom: 1px solid rgba(255,255,255,.03); transition: var(--t); }
+.wl-row:hover { background: var(--panel-2); }
+.wl-row.sel { background: linear-gradient(90deg, var(--accent-dim), transparent); border-left-color: var(--accent); }
+.wl-sym { font-weight: 700; letter-spacing: .3px; }
+.wl-name { font-size: 10.5px; color: var(--text-3); margin-top: 1px; }
+.wl-held { display: inline-block; font-size: 9.5px; color: var(--up); margin-top: 3px;
+  font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+.wl-right { text-align: right; }
+.wl-px { font-family: var(--mono); font-weight: 600; }
+.wl-chg { font-size: 11px; font-family: var(--mono); margin-top: 1px; }
+.empty { color: var(--text-3); text-align: center; padding: 34px 14px; font-size: 13px; }
+
+/* ------------------------------------------------------------- symbol header */
+.sym-head { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 15px 17px; border-bottom: 1px solid var(--border); }
+.sym-id .s { font-size: 20px; font-weight: 800; letter-spacing: .4px; }
+.sym-id .n { font-size: 12px; color: var(--text-3); }
+.sym-last { display: flex; align-items: baseline; gap: 11px; }
+.sym-last .p { font-size: 28px; font-weight: 800; font-family: var(--mono); letter-spacing: -.6px; }
+.sym-last .c { font-size: 14px; font-family: var(--mono); font-weight: 600; }
+.sym-kpis { margin-left: auto; display: flex; gap: 22px; }
+.kpi { text-align: right; }
+.kpi .k { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
+.kpi .v { font-family: var(--mono); font-weight: 600; font-size: 13px; margin-top: 3px; }
+
+/* ------------------------------------------------------------------ chart */
+.chart-wrap { position: relative; padding: 12px 14px 8px; border-bottom: 1px solid var(--border); }
+.chart-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.chart-top .rng { display: flex; gap: 6px; align-items: center; }
+canvas.chart { display: block; width: 100%; height: 280px; }
+
+/* ------------------------------------------------------------- order book */
+/* top-5 depth of book, bids on the LEFT, asks on the RIGHT (6 rows/side:
+   1 header + 5 levels), with a buyers-vs-sellers imbalance bar underneath. */
+.book { display: flex; flex-direction: column; padding: 12px 14px 14px; }
+.dob { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.dob-head, .dob-row { display: grid; grid-template-columns: 1fr 1fr; }
+.dob-head { background: var(--panel-2); border-bottom: 1px solid var(--border); }
+.dh { display: grid; grid-template-columns: 1fr 1fr; padding: 8px 13px; font-size: 10px;
+  text-transform: uppercase; letter-spacing: .5px; color: var(--text-3); }
+.dh:first-child { border-right: 1px solid var(--border); }
+.dh span:first-child { font-weight: 700; }
+.dh span:last-child { text-align: right; }
+.dob-row { border-top: 1px solid rgba(255,255,255,.035); }
+.half { position: relative; display: grid; grid-template-columns: 1fr 1fr; padding: 7px 13px;
+  font-family: var(--mono); font-size: 13px; cursor: pointer; transition: background var(--t); }
+.half.sell { border-left: 1px solid var(--border); }
+.half:hover { background: var(--panel-2); }
+.half.empty { cursor: default; }
+.half .bar { position: absolute; top: 2px; bottom: 2px; z-index: 0; }
+.half.buy .bar  { right: 0; background: var(--up-dim);   border-radius: 4px 0 0 4px; }
+.half.sell .bar { left: 0;  background: var(--down-dim); border-radius: 0 4px 4px 0; }
+.half > span { position: relative; z-index: 1; }
+.half .px { font-weight: 700; }
+.half.buy .px { color: var(--up); } .half.sell .px { color: var(--down); }
+.half .sz { text-align: right; color: var(--text-2); }
+.book-mid { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 9px;
+  font-family: var(--mono); font-size: 12.5px; color: var(--text-2); }
+.book-mid b { color: var(--text); } .book-mid .sp { color: var(--text-3); }
+
+/* buyers vs sellers imbalance */
+.imbalance { padding: 2px 2px 0; }
+.imb-bar { display: flex; height: 10px; border-radius: var(--pill); overflow: hidden;
+  background: var(--panel-2); border: 1px solid var(--border); }
+.imb-buy  { background: linear-gradient(90deg, var(--up-2), var(--up)); transition: width var(--t); }
+.imb-sell { background: linear-gradient(90deg, var(--down), var(--down-2)); transition: width var(--t); }
+.imb-legend { display: flex; justify-content: space-between; margin-top: 7px; font-size: 11.5px; font-weight: 700; }
+
+/* --------------------------------------------------------------- ticket */
+.ticket { display: flex; flex-direction: column; gap: 13px; padding: 15px; }
+.ticket .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.holdbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--panel-2); border: 1px solid var(--border); font-size: 12px; }
+.holdbar .k { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; }
+.holdbar .v { font-family: var(--mono); font-weight: 700; }
+.holdbar .sep { color: var(--border-2); }
+.holdbar .maxbtn { margin-left: auto; padding: 3px 11px; font-size: 11px; font-weight: 700; border-radius: var(--pill);
+  background: var(--panel-3); border: 1px solid var(--border-2); color: var(--text-2); cursor: pointer; transition: var(--t); }
+.holdbar .maxbtn:hover { color: var(--accent); border-color: var(--accent); }
+.est { display: flex; justify-content: space-between; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--panel-2); border: 1px solid var(--border); font-size: 12.5px; }
+.est .v { font-family: var(--mono); font-weight: 700; }
+.place { padding: 14px; border: none; border-radius: var(--r); font-weight: 800; font-size: 14.5px;
+  cursor: pointer; letter-spacing: .4px; transition: var(--t); }
+.place.buy { background: linear-gradient(180deg, var(--up-2), var(--up)); color: #04231a; }
+.place.sell { background: linear-gradient(180deg, var(--down-2), var(--down)); color: #2a0709; }
+.place:hover { filter: brightness(1.06); } .place:active { transform: translateY(1px); }
+.place:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.35); }
+.msg { font-size: 12px; min-height: 16px; color: var(--text-3); }
+.msg.ok { color: var(--up); } .msg.err { color: var(--down); } .msg.warn { color: var(--warn); }
+
+/* ------------------------------------------------------- open orders / tape */
+.mini { max-height: 230px; overflow-y: auto; }
+.tape-b { color: var(--up); } .tape-s { color: var(--down); }
+.tape-t { color: var(--text-3); font-size: 11px; }
+
+/* ------------------------------------------------------------- responsive */
+@media (max-width: 1180px) {
+  .terminal { grid-template-columns: 240px minmax(0, 1fr); grid-template-areas: "watch center" "right right"; height: auto; }
+  .col.left { grid-area: watch; } .col.center { grid-area: center; min-height: 520px; } .col.right { grid-area: right; }
+  .col.right { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); align-items: start; overflow: visible; }
+  .col.right .ticket-card { grid-column: 1; grid-row: 1 / span 2; }
+}
+@media (max-width: 860px) {
+  .page { padding: 9px; }
+  .mtabs { display: grid; }
+  .terminal { grid-template-columns: 1fr; grid-template-areas: "watch" "center" "right"; gap: 10px; height: auto; }
+  .col.right { display: flex; }
+  .col.right .ticket-card { order: -1; }   /* ticket first on mobile (primary action) */
+  .terminal[data-sec="watch"] .col.center, .terminal[data-sec="watch"] .col.right,
+  .terminal[data-sec="chart"] .col.left, .terminal[data-sec="chart"] .col.right,
+  .terminal[data-sec="trade"] .col.left, .terminal[data-sec="trade"] .col.center { display: none; }
+  .col.center { min-height: 0; }
+  .sym-kpis { width: 100%; margin-left: 0; justify-content: space-between; gap: 10px; }
+  .half { padding: 9px 12px; font-size: 14px; }
+  .wl-row { padding: 13px 14px; }
+}
+@media (max-width: 560px) {
+  .nav { display: none; }
+  .sym-kpis .kpi:nth-child(n+3) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  .conn .dot { animation: none; }
+}

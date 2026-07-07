@@ -116,16 +116,23 @@ void MarketSimulator::recordTrades(Market& m, const std::vector<Trade>& trades, 
         m.tape.push_back({nextSeq(), t.price, t.quantity, aggressor});
         if (m.tape.size() > kTapeMax) m.tape.pop_front();
 
-        // User accounting: did the human take part in this fill?
+        // User accounting: did the human take part in this fill? Holdings are
+        // long-only (naked shorts are rejected), so average-cost accounting gives
+        // a clean realised/unrealised P&L split.
         if (t.buyer_id == kUserTrader) {
             auto& a = acct_[m.symbol];
+            const std::uint64_t pos = a.bought - a.sold;           // long qty before this buy
+            a.avgCost = (pos + t.quantity)
+                      ? (a.avgCost * pos + (double)t.price * t.quantity) / (pos + t.quantity) : 0.0;
             a.bought      += t.quantity;
             a.buyNotional += t.price * t.quantity;
         }
         if (t.seller_id == kUserTrader) {
             auto& a = acct_[m.symbol];
+            a.realized    += ((double)t.price - a.avgCost) * t.quantity;   // booked vs avg cost
             a.sold         += t.quantity;
             a.sellNotional += t.price * t.quantity;
+            if (a.bought == a.sold) a.avgCost = 0.0;                        // flat -> reset basis
         }
     }
 }
@@ -148,6 +155,9 @@ std::vector<MarketSimulator::Quote> MarketSimulator::quotes() {
         q.symbol = sym; q.last = m.last; q.reference = m.reference;
         if (auto b = m.book.bestBid()) { q.hasBid = true; q.bestBid = *b; }
         if (auto a = m.book.bestAsk()) { q.hasAsk = true; q.bestAsk = *a; }
+        q.heldQty = heldQtyLocked(sym);
+        const std::uint64_t reserved = reservedSellLocked(sym);
+        q.sellableQty = q.heldQty > reserved ? q.heldQty - reserved : 0;
         out.push_back(std::move(q));
     }
     return out;
@@ -165,6 +175,9 @@ bool MarketSimulator::book(const std::string& symbol, std::size_t depth,
     quote.symbol = symbol; quote.last = m.last; quote.reference = m.reference;
     if (auto b = m.book.bestBid()) { quote.hasBid = true; quote.bestBid = *b; }
     if (auto a = m.book.bestAsk()) { quote.hasAsk = true; quote.bestAsk = *a; }
+    quote.heldQty = heldQtyLocked(symbol);
+    const std::uint64_t reserved = reservedSellLocked(symbol);
+    quote.sellableQty = quote.heldQty > reserved ? quote.heldQty - reserved : 0;
     return true;
 }
 
@@ -211,10 +224,33 @@ MarketSimulator::Report MarketSimulator::report() {
         sr.bought = a.bought; sr.sold = a.sold;
         sr.buyNotional = a.buyNotional; sr.sellNotional = a.sellNotional;
         sr.markPrice = markets_.at(sym).last;
+        sr.avgCost = a.avgCost; sr.realized = a.realized;
         rep.perSymbol.push_back(sr);
         rep.userVolume += a.bought + a.sold;
     }
     return rep;
+}
+
+// --------------------------------------------------------------------------
+// User holdings (both helpers assume mu_ is already held)
+// --------------------------------------------------------------------------
+std::uint64_t MarketSimulator::heldQtyLocked(const std::string& symbol) const {
+    auto it = acct_.find(symbol);
+    if (it == acct_.end()) return 0;
+    const Acct& a = it->second;
+    return a.bought > a.sold ? a.bought - a.sold : 0;   // net shares owned
+}
+
+std::uint64_t MarketSimulator::reservedSellLocked(const std::string& symbol) {
+    std::uint64_t reserved = 0;
+    for (const auto& [id, sym] : userOrderSymbol_) {
+        if (sym != symbol) continue;
+        auto mit = markets_.find(sym);
+        if (mit == markets_.end()) continue;
+        if (auto o = mit->second.book.getOrder(id))
+            if (o->side == Side::Sell) reserved += o->quantity;   // shares locked by open sells
+    }
+    return reserved;
 }
 
 // --------------------------------------------------------------------------
@@ -232,6 +268,23 @@ MarketSimulator::placeUserOrder(const std::string& symbol, Side side, OrderType 
         res.message = "limit orders need a price > 0"; return res;
     }
     Market& m = it->second;
+
+    // Real-world cash-account rule: you can only sell shares you actually own
+    // (no naked short selling). Available = holdings - shares already committed
+    // to your resting sell orders. Buy first, then you can sell.
+    if (side == Side::Sell) {
+        const std::uint64_t held     = heldQtyLocked(symbol);
+        const std::uint64_t reserved = reservedSellLocked(symbol);
+        const std::uint64_t sellable = held > reserved ? held - reserved : 0;
+        if (qty > sellable) {
+            res.accepted = false;
+            res.message  = "can't sell what you don't own: you hold " + std::to_string(held)
+                         + " " + symbol
+                         + (reserved ? (" (" + std::to_string(reserved) + " reserved by open sells)") : "")
+                         + ", sellable " + std::to_string(sellable);
+            return res;
+        }
+    }
 
     const std::uint64_t id = nextId();
     Order o{id, kUserTrader, side, price, qty, type};

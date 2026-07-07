@@ -19,6 +19,7 @@
 #include <string>
 #include <sstream>
 #include <cstdio>
+#include <cmath>
 #include <iostream>
 
 namespace {
@@ -78,6 +79,8 @@ void handleSymbols(const httplib::Request&, httplib::Response& res) {
            << ",\"bestAsk\":" << (q.hasAsk ? std::to_string(q.bestAsk) : "null")
            << ",\"spread\":"
            << ((q.hasBid && q.hasAsk) ? std::to_string(q.bestAsk - q.bestBid) : "null")
+           << ",\"held\":" << q.heldQty
+           << ",\"sellable\":" << q.sellableQty
            << "}";
     }
     os << "]";
@@ -111,6 +114,8 @@ void handleBook(const httplib::Request& req, httplib::Response& res) {
        << ",\"bestAsk\":" << (q.hasAsk ? std::to_string(q.bestAsk) : "null")
        << ",\"spread\":"
        << ((q.hasBid && q.hasAsk) ? std::to_string(q.bestAsk - q.bestBid) : "null")
+       << ",\"held\":" << q.heldQty
+       << ",\"sellable\":" << q.sellableQty
        << ",\"bids\":"; levels(os, bids);
     os << ",\"asks\":"; levels(os, asks);
     os << "}";
@@ -187,11 +192,13 @@ void handleMyOrders(const httplib::Request&, httplib::Response& res) {
 // Shared P&L math used by both the JSON and CSV report endpoints.
 struct Row {
     std::string symbol;
-    long long bought, sold, position, avgBuy, avgSell, mark, cash, pnl;
+    long long bought, sold, position, avgBuy, avgSell, avgCost, mark, cash;
+    long long realized, unrealized, pnl;
 };
-std::vector<Row> buildRows(const MarketSimulator::Report& rep, long long& totalPnl) {
+std::vector<Row> buildRows(const MarketSimulator::Report& rep, long long& totalPnl,
+                           long long& totalRealized) {
     std::vector<Row> rows;
-    totalPnl = 0;
+    totalPnl = 0; totalRealized = 0;
     for (const auto& s : rep.perSymbol) {
         Row r;
         r.symbol  = s.symbol;
@@ -200,10 +207,13 @@ std::vector<Row> buildRows(const MarketSimulator::Report& rep, long long& totalP
         r.position = r.bought - r.sold;
         r.avgBuy  = s.bought ? (long long)(s.buyNotional / s.bought) : 0;
         r.avgSell = s.sold ? (long long)(s.sellNotional / s.sold) : 0;
+        r.avgCost = std::llround(s.avgCost);
         r.mark    = (long long)s.markPrice;
         r.cash    = (long long)s.sellNotional - (long long)s.buyNotional;
-        r.pnl     = r.cash + r.position * r.mark;   // mark-to-market P&L
-        totalPnl += r.pnl;
+        r.pnl     = r.cash + r.position * r.mark;   // total mark-to-market P&L
+        r.realized   = std::llround(s.realized);    // booked (avg-cost) P&L
+        r.unrealized = r.pnl - r.realized;          // open P&L (total = realised + unrealised)
+        totalPnl += r.pnl; totalRealized += r.realized;
         rows.push_back(r);
     }
     return rows;
@@ -211,8 +221,8 @@ std::vector<Row> buildRows(const MarketSimulator::Report& rep, long long& totalP
 
 void handleReport(const httplib::Request&, httplib::Response& res) {
     auto rep = g_market.report();
-    long long totalPnl = 0;
-    auto rows = buildRows(rep, totalPnl);
+    long long totalPnl = 0, totalRealized = 0;
+    auto rows = buildRows(rep, totalPnl, totalRealized);
 
     std::ostringstream os;
     os << "{\"ordersPlaced\":" << rep.ordersPlaced
@@ -220,6 +230,8 @@ void handleReport(const httplib::Request&, httplib::Response& res) {
        << ",\"openOrders\":" << rep.openOrders
        << ",\"userVolume\":" << rep.userVolume
        << ",\"totalPnl\":" << totalPnl
+       << ",\"totalRealized\":" << totalRealized
+       << ",\"totalUnrealized\":" << (totalPnl - totalRealized)
        << ",\"perSymbol\":[";
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const auto& r = rows[i];
@@ -228,7 +240,10 @@ void handleReport(const httplib::Request&, httplib::Response& res) {
            << ",\"bought\":" << r.bought << ",\"sold\":" << r.sold
            << ",\"position\":" << r.position
            << ",\"avgBuy\":" << r.avgBuy << ",\"avgSell\":" << r.avgSell
+           << ",\"avgCost\":" << r.avgCost
            << ",\"mark\":" << r.mark << ",\"cash\":" << r.cash
+           << ",\"realized\":" << r.realized
+           << ",\"unrealized\":" << r.unrealized
            << ",\"pnl\":" << r.pnl << "}";
     }
     os << "]}";
@@ -237,16 +252,16 @@ void handleReport(const httplib::Request&, httplib::Response& res) {
 
 void handleReportCsv(const httplib::Request&, httplib::Response& res) {
     auto rep = g_market.report();
-    long long totalPnl = 0;
-    auto rows = buildRows(rep, totalPnl);
+    long long totalPnl = 0, totalRealized = 0;
+    auto rows = buildRows(rep, totalPnl, totalRealized);
 
     std::ostringstream os;
-    os << "symbol,bought,sold,position,avg_buy_cents,avg_sell_cents,mark_cents,cash_cents,pnl_cents\n";
+    os << "symbol,bought,sold,position,avg_cost_cents,mark_cents,realized_cents,unrealized_cents,pnl_cents\n";
     for (const auto& r : rows) {
         os << r.symbol << "," << r.bought << "," << r.sold << "," << r.position << ","
-           << r.avgBuy << "," << r.avgSell << "," << r.mark << "," << r.cash << "," << r.pnl << "\n";
+           << r.avgCost << "," << r.mark << "," << r.realized << "," << r.unrealized << "," << r.pnl << "\n";
     }
-    os << "TOTAL,,,,,,,," << totalPnl << "\n";
+    os << "TOTAL,,,,,," << totalRealized << "," << (totalPnl - totalRealized) << "," << totalPnl << "\n";
     res.set_header("Content-Disposition", "attachment; filename=\"session_report.csv\"");
     res.set_content(os.str(), "text/csv");
 }

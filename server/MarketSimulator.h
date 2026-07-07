@@ -35,6 +35,8 @@ public:
         std::uint64_t reference = 0;   // session open ("prev close") for % change
         bool          hasBid = false, hasAsk = false;
         std::uint64_t bestBid = 0, bestAsk = 0;
+        std::uint64_t heldQty     = 0; // shares the user currently owns (net)
+        std::uint64_t sellableQty = 0; // holdings not already reserved by open sells
     };
 
     struct TapeTrade {
@@ -65,6 +67,8 @@ public:
         std::uint64_t bought = 0, sold = 0;            // shares
         std::uint64_t buyNotional = 0, sellNotional = 0; // cents
         std::uint64_t markPrice = 0;                   // last price
+        double        avgCost  = 0;                    // avg cost of the CURRENT position (cents)
+        double        realized = 0;                    // booked P&L so far (cents)
     };
     struct Report {
         std::vector<SymbolReport> perSymbol;
@@ -116,6 +120,10 @@ private:
     // Submit one simulated (crowd) order and book-keep the result. Returns its id.
     std::uint64_t submitSim(Market& m, Side side, OrderType type,
                             std::uint64_t price, std::uint64_t qty);
+    // User holdings helpers (mu_ held). held = filled buys - filled sells;
+    // reserved = qty locked up by the user's own resting sell orders.
+    std::uint64_t heldQtyLocked(const std::string& symbol) const;
+    std::uint64_t reservedSellLocked(const std::string& symbol);
     std::uint64_t nextId()  { return next_order_id_++; }
     std::uint64_t nextSeq() { return next_event_seq_++; }
     void          run();    // background loop
@@ -125,8 +133,10 @@ private:
     std::unordered_map<std::string, Market>    markets_;
     std::unordered_map<std::uint64_t, std::string> userOrderSymbol_;  // id -> symbol
 
-    // user accounting (per symbol)
-    struct Acct { std::uint64_t bought=0, sold=0, buyNotional=0, sellNotional=0; };
+    // user accounting (per symbol). avgCost/realized implement long-only average
+    // cost accounting so the reported P&L is a correct realised/unrealised split.
+    struct Acct { std::uint64_t bought=0, sold=0, buyNotional=0, sellNotional=0;
+                  double avgCost=0, realized=0; };
     std::unordered_map<std::string, Acct>      acct_;
     std::uint64_t userOrdersPlaced_    = 0;
     std::uint64_t userOrdersCancelled_ = 0;

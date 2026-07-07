@@ -1,346 +1,176 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>C++ LOB Exchange</title>
-<style>
-  :root{
-    --bg:#0b0e14; --panel:#131722; --panel2:#0e1119; --border:#1e2330;
-    --text:#d1d4dc; --muted:#787b86; --accent:#2962ff;
-    --buy:#26a69a; --sell:#ef5350; --buy-dim:rgba(38,166,154,.18); --sell-dim:rgba(239,83,80,.18);
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);
-    font-family:"Segoe UI",system-ui,sans-serif;font-size:14px}
-  .mono{font-family:"Consolas","SF Mono",monospace;font-variant-numeric:tabular-nums}
-  header{display:flex;align-items:center;gap:14px;padding:10px 18px;
-    background:var(--panel);border-bottom:1px solid var(--border)}
-  header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.3px}
-  header .tag{font-size:11px;color:var(--muted);border:1px solid var(--border);
-    padding:2px 8px;border-radius:10px}
-  .live{display:flex;align-items:center;gap:6px;margin-left:auto;color:var(--muted);font-size:12px}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--buy);animation:pulse 1.4s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-  .grid{display:grid;grid-template-columns:230px 1fr 320px;gap:12px;padding:12px;
-    height:calc(100vh - 53px)}
-  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;
-    display:flex;flex-direction:column;overflow:hidden}
-  .panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);
-    margin:0;padding:10px 12px;border-bottom:1px solid var(--border)}
-  .scroll{overflow-y:auto}
-  /* watchlist */
-  .wl-row{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;
-    cursor:pointer;border-bottom:1px solid var(--panel2)}
-  .wl-row:hover{background:var(--panel2)}
-  .wl-row.sel{background:linear-gradient(90deg,rgba(41,98,255,.16),transparent);
-    border-left:3px solid var(--accent)}
-  .wl-sym{font-weight:600}
-  .wl-px{text-align:right}
-  .wl-chg{font-size:11px}
-  /* center */
-  .sym-head{display:flex;align-items:baseline;gap:12px;padding:12px}
-  .sym-head .big{font-size:26px;font-weight:600}
-  .sym-head .name{font-size:18px;color:var(--muted)}
-  canvas{width:100%;height:90px;display:block}
-  .ladder{flex:1;display:flex;flex-direction:column;overflow:hidden}
-  .lad-head,.lad-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;
-    padding:3px 14px;font-size:13px}
-  .lad-head{color:var(--muted);font-size:11px;text-transform:uppercase;border-bottom:1px solid var(--border)}
-  .lad-row{position:relative}
-  .lad-row .bar{position:absolute;top:0;bottom:0;right:0;z-index:0}
-  .lad-row.bid .bar{background:var(--buy-dim)}
-  .lad-row.ask .bar{background:var(--sell-dim)}
-  .lad-row span{position:relative;z-index:1}
-  .lad-row .px{font-weight:600}
-  .lad-row.ask .px{color:var(--sell)} .lad-row.bid .px{color:var(--buy)}
-  .lad-row .qty{text-align:right} .lad-row .tot{text-align:right;color:var(--muted)}
-  .spread{display:flex;justify-content:center;gap:10px;padding:6px;color:var(--muted);
-    font-size:12px;background:var(--panel2);border-top:1px solid var(--border);
-    border-bottom:1px solid var(--border)}
-  /* right column */
-  .stack{display:flex;flex-direction:column;gap:12px;overflow-y:auto}
-  .ticket{padding:12px;display:flex;flex-direction:column;gap:10px}
-  .side-toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-  .side-toggle button{padding:9px;border:1px solid var(--border);background:var(--panel2);
-    color:var(--text);border-radius:6px;cursor:pointer;font-weight:600}
-  .side-toggle button.buy.on{background:var(--buy);border-color:var(--buy);color:#04221f}
-  .side-toggle button.sell.on{background:var(--sell);border-color:var(--sell);color:#2a0606}
-  label{font-size:11px;color:var(--muted);display:block;margin-bottom:4px}
-  select,input{width:100%;padding:8px;background:var(--panel2);border:1px solid var(--border);
-    border-radius:6px;color:var(--text);font-size:14px}
-  input:disabled{opacity:.4}
-  .submit{padding:11px;border:none;border-radius:6px;font-weight:700;cursor:pointer;
-    color:#fff;font-size:14px}
-  .submit.buy{background:var(--buy);color:#04221f} .submit.sell{background:var(--sell);color:#2a0606}
-  .msg{font-size:12px;min-height:16px;color:var(--muted)}
-  .msg.ok{color:var(--buy)} .msg.err{color:var(--sell)}
-  table{width:100%;border-collapse:collapse;font-size:12px}
-  th,td{text-align:right;padding:5px 10px} th{color:var(--muted);font-weight:500;font-size:11px}
-  th:first-child,td:first-child{text-align:left}
-  tbody tr{border-top:1px solid var(--panel2)}
-  .x{cursor:pointer;color:var(--sell);font-weight:700}
-  .tape-row td.b{color:var(--buy)} .tape-row td.s{color:var(--sell)}
-  .btn{padding:7px 12px;background:var(--panel2);border:1px solid var(--border);color:var(--text);
-    border-radius:6px;cursor:pointer;font-size:12px}
-  .btn:hover{border-color:var(--accent)}
-  .green{color:var(--buy)} .red{color:var(--sell)}
-  .report-actions{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border)}
-  /* report modal */
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
-    align-items:center;justify-content:center;z-index:10}
-  .overlay.show{display:flex}
-  .modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;
-    width:min(680px,92vw);max-height:86vh;overflow:auto}
-  .modal-head{display:flex;justify-content:space-between;align-items:center;
-    padding:14px 16px;border-bottom:1px solid var(--border)}
-  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px 16px}
-  .card{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px}
-  .card .k{font-size:11px;color:var(--muted)} .card .v{font-size:18px;font-weight:600;margin-top:3px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0e13" />
+  <meta name="description" content="A live trading terminal powered by a C++ price/time-priority matching engine." />
+  <title>C++ LOB · Trade</title>
+  <link rel="icon" href="/assets/icons/icon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/app.css" />
+  <link rel="stylesheet" href="/assets/css/terminal.css" />
 </head>
-<body>
-<header>
-  <h1>C++&nbsp;LOB&nbsp;Exchange</h1>
-  <span class="tag">price&middot;time priority matching engine</span>
-  <span class="tag">cpp-httplib</span>
-  <div class="live"><span class="dot"></span><span id="clock">live</span></div>
-</header>
+<body data-page="terminal">
 
-<div class="grid">
-  <!-- WATCHLIST -->
-  <div class="panel">
-    <h2>Watchlist</h2>
-    <div class="scroll" id="watchlist"></div>
-  </div>
-
-  <!-- CENTER: chart + ladder -->
-  <div class="panel">
-    <div class="sym-head">
-      <span class="big mono" id="selLast">--</span>
-      <span class="name" id="selSym">--</span>
-      <span id="selChg" class="mono"></span>
+  <!-- ============================== APP BAR ============================== -->
+  <header class="appbar">
+    <a class="brand" href="/index.html">
+      <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v6M6 14v6M18 4v10M18 18v2M12 8v3M12 15v1"/><rect x="4" y="10" width="4" height="4" rx="1"/><rect x="16" y="14" width="4" height="4" rx="1"/><rect x="10" y="11" width="4" height="4" rx="1"/></svg></span>
+      <b>C++ LOB <span>Exchange</span></b>
+    </a>
+    <nav class="nav">
+      <a href="/index.html" data-nav="terminal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l4-4 3 3 5-6 4 4"/><path d="M4 20h16"/></svg>Trade</a>
+      <a href="/orders.html" data-nav="orders"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Orders</a>
+    </nav>
+    <div class="bar-right">
+      <span class="pnl-chip" title="Your total profit & loss, marked to the live price"><span class="lbl">P&amp;L</span><span class="val mono" id="pnlChip">$0.00</span></span>
+      <span class="conn" id="conn"><span class="dot"></span><span class="txt">Live</span></span>
     </div>
-    <canvas id="spark" width="600" height="90"></canvas>
-    <div class="ladder">
-      <div class="lad-head"><span>Price</span><span class="qty">Size</span><span class="tot">Total</span></div>
-      <div id="asks"></div>
-      <div class="spread"><span id="spreadTxt">spread --</span></div>
-      <div id="bids"></div>
-    </div>
-  </div>
+  </header>
 
-  <!-- RIGHT: ticket + orders + tape -->
-  <div class="panel">
-    <div class="stack">
-      <div class="ticket">
-        <h2 style="padding:0;border:none;margin-bottom:2px">Order Ticket</h2>
-        <div class="side-toggle">
-          <button class="buy on" id="btnBuy" onclick="setSide('BUY')">BUY</button>
-          <button class="sell" id="btnSell" onclick="setSide('SELL')">SELL</button>
+  <!-- ============================== TERMINAL ============================= -->
+  <main class="page">
+    <div class="seg mtabs" id="mtabs">
+      <button data-sec="watch">Watchlist</button>
+      <button data-sec="chart" class="on">Chart &amp; Book</button>
+      <button data-sec="trade">Trade</button>
+    </div>
+
+    <div class="terminal" id="terminal" data-sec="chart">
+
+      <!-- LEFT: watchlist -->
+      <div class="col left">
+        <div class="card grow wl">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+            <input id="wlSearch" type="search" placeholder="Search symbol  ( / )" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="wl-list" id="watchlist"></div>
         </div>
-        <div>
-          <label>Order type</label>
-          <select id="otype" onchange="onTypeChange()">
-            <option value="GTC">Limit (Good-Till-Cancel)</option>
-            <option value="MKT">Market</option>
-            <option value="IOC">Immediate-or-Cancel</option>
-            <option value="FOK">Fill-or-Kill</option>
-          </select>
-        </div>
-        <div>
-          <label>Limit price ($)</label>
-          <input id="oprice" class="mono" type="number" step="0.01" placeholder="0.00" />
-        </div>
-        <div>
-          <label>Quantity (shares)</label>
-          <input id="oqty" class="mono" type="number" step="1" value="100" />
-        </div>
-        <button class="submit buy" id="submitBtn" onclick="placeOrder()">BUY AAPL</button>
-        <div class="msg" id="orderMsg"></div>
       </div>
 
-      <div class="panel" style="margin:0 12px">
-        <h2>My Orders</h2>
-        <table><thead><tr><th>Sym</th><th>Side</th><th>Price</th><th>Qty</th><th></th></tr></thead>
-        <tbody id="myorders"></tbody></table>
-        <div style="height:6px"></div>
-      </div>
-
-      <div class="panel" style="margin:0 12px 12px">
-        <h2>Time &amp; Sales</h2>
-        <table><thead><tr><th>Price</th><th>Size</th><th>Side</th></tr></thead>
-        <tbody id="tape"></tbody></table>
-        <div class="report-actions">
-          <button class="btn" onclick="openReport()">Generate report</button>
-          <a class="btn" href="/api/report.csv">Download CSV</a>
+      <!-- CENTER: header + chart + book -->
+      <div class="col center">
+        <div class="card grow">
+          <div class="sym-head">
+            <div class="sym-id"><div class="s" id="symName">—</div><div class="n" id="symDesc">select a symbol</div></div>
+            <div class="sym-last"><span class="p" id="symLast">—</span><span class="c" id="symChg"></span></div>
+            <div class="sym-kpis">
+              <div class="kpi"><div class="k">Bid</div><div class="v up" id="kBid">—</div></div>
+              <div class="kpi"><div class="k">Ask</div><div class="v down" id="kAsk">—</div></div>
+              <div class="kpi"><div class="k">Spread</div><div class="v" id="kSpread">—</div></div>
+              <div class="kpi"><div class="k">Open</div><div class="v" id="kOpen">—</div></div>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <div class="chart-top">
+              <span class="dim mono" id="chartMeta" style="font-size:11.5px"></span>
+              <div class="rng tabs" id="chartRanges">
+                <button data-range="300000">5M</button>
+                <button data-range="600000" class="on">10M</button>
+                <button data-range="0">Session</button>
+              </div>
+            </div>
+            <canvas id="chart" class="chart" height="280"></canvas>
+          </div>
+          <div class="book">
+            <div class="dob">
+              <div class="dob-head">
+                <div class="dh"><span class="up">Bid</span><span>Size</span></div>
+                <div class="dh"><span class="down">Ask</span><span>Size</span></div>
+              </div>
+              <div class="dob-rows" id="dobRows"></div>
+            </div>
+            <div class="book-mid"><b id="midPx">—</b><span class="sp" id="midSpread">spread —</span></div>
+            <div class="imbalance">
+              <div class="imb-bar"><span class="imb-buy" id="imbBuy"></span><span class="imb-sell" id="imbSell"></span></div>
+              <div class="imb-legend"><span class="up" id="imbBuyTxt">Buyers —</span><span class="down" id="imbSellTxt">Sellers —</span></div>
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- RIGHT: open orders + tape (fills), with the order ticket anchored at the bottom -->
+      <div class="col right">
+        <div class="card">
+          <div class="card-h">Open Orders<span class="spacer"></span><span class="tag"><span id="ordCount">0</span> live</span></div>
+          <div class="mini">
+            <table>
+              <thead><tr><th>Sym</th><th>Side</th><th>Price</th><th>Qty</th><th></th></tr></thead>
+              <tbody id="openOrders"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card tape-card">
+          <div class="card-h">Time &amp; Sales<span class="spacer"></span><span class="tag" id="tapeSym"></span></div>
+          <div class="mini">
+            <table>
+              <thead><tr><th>Price</th><th>Size</th><th>Side</th></tr></thead>
+              <tbody id="tape"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card ticket-card">
+          <div class="card-h">Order Ticket<span class="spacer"></span><span class="tag" id="tktSym">—</span></div>
+          <div class="ticket">
+            <div class="seg bs side">
+              <button class="buy on" id="sideBuy" type="button">BUY</button>
+              <button class="sell" id="sideSell" type="button">SELL</button>
+            </div>
+            <div class="holdbar">
+              <span class="k">Holdings</span><span class="v" id="hHeld">0</span>
+              <span class="sep">·</span>
+              <span class="k">Sellable</span><span class="v" id="hSell">0</span>
+              <button class="maxbtn" id="hMax" type="button" hidden>Max</button>
+            </div>
+            <div>
+              <label class="fld">Order type</label>
+              <select id="oType">
+                <option value="GTC">Limit</option>
+                <option value="MKT">Market</option>
+                <option value="IOC">Immediate-or-Cancel</option>
+                <option value="FOK">Fill-or-Kill</option>
+              </select>
+            </div>
+            <div class="row2">
+              <div>
+                <label class="fld">Price ($)</label>
+                <input id="oPrice" class="mono" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+              </div>
+              <div>
+                <label class="fld">Quantity</label>
+                <div class="stepper">
+                  <button id="qtyMinus" type="button" aria-label="decrease">−</button>
+                  <input id="oQty" class="mono" type="number" step="1" min="0" inputmode="numeric" value="100" />
+                  <button id="qtyPlus" type="button" aria-label="increase">+</button>
+                </div>
+              </div>
+            </div>
+            <div class="est"><span class="dim">Est. value</span><span class="v" id="estVal">—</span></div>
+            <button class="place buy" id="placeBtn">BUY</button>
+            <div class="msg" id="msg"></div>
+          </div>
+        </div>
+      </div>
+
     </div>
-  </div>
-</div>
+  </main>
 
-<!-- REPORT MODAL -->
-<div class="overlay" id="overlay" onclick="if(event.target===this)closeReport()">
-  <div class="modal">
-    <div class="modal-head"><h2 style="border:none;padding:0">Session Report</h2>
-      <button class="btn" onclick="closeReport()">Close</button></div>
-    <div class="cards" id="reportCards"></div>
-    <table style="margin-bottom:14px"><thead><tr>
-      <th>Symbol</th><th>Bought</th><th>Sold</th><th>Position</th>
-      <th>Avg Buy</th><th>Avg Sell</th><th>Mark</th><th>P&amp;L</th></tr></thead>
-      <tbody id="reportRows"></tbody></table>
-  </div>
-</div>
+  <!-- ============================ BOTTOM NAV ============================= -->
+  <nav class="bottomnav">
+    <a href="/index.html" data-nav="terminal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l4-4 3 3 5-6 4 4"/><path d="M4 20h16"/></svg>Trade</a>
+    <a href="/orders.html" data-nav="orders"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Orders</a>
+  </nav>
 
-<script>
-// ---------- state ----------
-let SEL = "AAPL";
-let SIDE = "BUY";
-const sparks = {};                 // symbol -> recent prices
-
-// ---------- helpers ----------
-const $ = id => document.getElementById(id);
-const money = c => (c/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-const signClass = n => n>0?"green":n<0?"red":"";
-const sign = n => (n>0?"+":"") + n;
-async function getJSON(u){ const r = await fetch(u); return r.json(); }
-
-// ---------- order ticket ----------
-function setSide(s){
-  SIDE=s;
-  $("btnBuy").classList.toggle("on",s==="BUY");
-  $("btnSell").classList.toggle("on",s==="SELL");
-  const b=$("submitBtn");
-  b.className="submit "+(s==="BUY"?"buy":"sell");
-  b.textContent=`${s} ${SEL}`;
-}
-function onTypeChange(){
-  const isMkt = $("otype").value==="MKT";
-  $("oprice").disabled = isMkt;
-  if(isMkt) $("oprice").value="";
-}
-async function placeOrder(){
-  const type=$("otype").value;
-  const qty=parseInt($("oqty").value||"0",10);
-  const priceCents = type==="MKT" ? 0 : Math.round(parseFloat($("oprice").value||"0")*100);
-  const msg=$("orderMsg");
-  if(qty<=0){ msg.className="msg err"; msg.textContent="Enter a quantity > 0"; return; }
-  if(type!=="MKT" && priceCents<=0){ msg.className="msg err"; msg.textContent="Enter a limit price"; return; }
-  const body=new URLSearchParams({symbol:SEL,side:SIDE,type,price:priceCents,qty});
-  const r=await fetch("/api/order",{method:"POST",body});
-  const d=await r.json();
-  if(!d.accepted){ msg.className="msg err"; msg.textContent="Rejected: "+d.message; return; }
-  msg.className="msg ok";
-  msg.textContent = d.filledQty>0
-    ? `Filled ${d.filledQty}${d.restingQty>0?` (+${d.restingQty} resting)`:""} — ${d.message}`
-    : d.message;
-  refresh();
-}
-
-// ---------- rendering ----------
-function renderWatch(rows){
-  $("watchlist").innerHTML = rows.map(q=>`
-    <div class="wl-row ${q.symbol===SEL?'sel':''}" onclick="selectSym('${q.symbol}')">
-      <div><div class="wl-sym">${q.symbol}</div>
-        <div class="wl-chg ${signClass(q.change)}">${q.changePct>0?'+':''}${q.changePct}%</div></div>
-      <div class="wl-px mono">$${money(q.last)}</div>
-    </div>`).join("");
-  const me = rows.find(q=>q.symbol===SEL);
-  if(me){
-    $("selSym").textContent=SEL;
-    $("selLast").textContent="$"+money(me.last);
-    const chg = (me.change>0?'+':me.change<0?'-':'') + '$' + money(Math.abs(me.change));
-    $("selChg").textContent=`${chg} (${me.changePct}%)`;
-    $("selChg").className="mono "+signClass(me.change);
-    (sparks[SEL]=sparks[SEL]||[]).push(me.last);
-    if(sparks[SEL].length>80) sparks[SEL].shift();
-    drawSpark();
-  }
-}
-function renderBook(d){
-  const all=[...d.bids.map(l=>l.qty),...d.asks.map(l=>l.qty),1];
-  const max=Math.max(...all);
-  const row=(l,cls)=>{
-    const w=(l.qty/max*100).toFixed(0);
-    return `<div class="lad-row ${cls}"><div class="bar" style="width:${w}%"></div>
-      <span class="px mono">$${money(l.price)}</span>
-      <span class="qty mono">${l.qty}</span>
-      <span class="tot mono">${l.orders}</span></div>`;
-  };
-  // asks: show worst on top so best ask sits just above the spread
-  $("asks").innerHTML = d.asks.slice().reverse().map(l=>row(l,"ask")).join("");
-  $("bids").innerHTML = d.bids.map(l=>row(l,"bid")).join("");
-  $("spreadTxt").textContent = d.spread==null ? "one-sided"
-      : `spread $${money(d.spread)}  •  bid $${money(d.bestBid)} / ask $${money(d.bestAsk)}`;
-}
-function renderTape(rows){
-  $("tape").innerHTML = rows.map(t=>`
-    <tr class="tape-row"><td class="mono ${t.side==='BUY'?'b':'s'}">$${money(t.price)}</td>
-      <td class="mono">${t.qty}</td><td class="${t.side==='BUY'?'b':'s'}">${t.side==='BUY'?'▲':'▼'}</td></tr>`).join("");
-}
-function renderMyOrders(rows){
-  $("myorders").innerHTML = rows.length? rows.map(o=>`
-    <tr><td>${o.symbol}</td><td class="${o.side==='BUY'?'green':'red'}">${o.side}</td>
-      <td class="mono">$${money(o.price)}</td><td class="mono">${o.qty}</td>
-      <td class="x" onclick="cancelOrder(${o.id})">&times;</td></tr>`).join("")
-    : `<tr><td colspan="5" style="color:var(--muted);text-align:center">no open orders</td></tr>`;
-}
-async function cancelOrder(id){ await fetch("/api/cancel",{method:"POST",body:new URLSearchParams({id})}); refresh(); }
-
-function drawSpark(){
-  const c=$("spark"), ctx=c.getContext("2d");
-  const w=c.width=c.clientWidth, h=c.height;
-  ctx.clearRect(0,0,w,h);
-  const data=sparks[SEL]||[]; if(data.length<2) return;
-  const min=Math.min(...data), max=Math.max(...data), rng=(max-min)||1;
-  const up = data[data.length-1]>=data[0];
-  ctx.strokeStyle = up?getCss('--buy'):getCss('--sell'); ctx.lineWidth=1.5;
-  ctx.beginPath();
-  data.forEach((p,i)=>{ const x=i/(data.length-1)*w, y=h-8-((p-min)/rng)*(h-16);
-    i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
-  ctx.stroke();
-  ctx.lineTo(w,h); ctx.lineTo(0,h); ctx.closePath();
-  ctx.fillStyle = up?'rgba(38,166,154,.10)':'rgba(239,83,80,.10)'; ctx.fill();
-}
-const getCss = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-
-// ---------- report ----------
-async function openReport(){
-  const d=await getJSON("/api/report");
-  $("reportCards").innerHTML=`
-    <div class="card"><div class="k">Orders placed</div><div class="v">${d.ordersPlaced}</div></div>
-    <div class="card"><div class="k">Cancelled</div><div class="v">${d.ordersCancelled}</div></div>
-    <div class="card"><div class="k">Volume traded</div><div class="v">${d.userVolume}</div></div>
-    <div class="card"><div class="k">Net P&amp;L</div>
-      <div class="v ${signClass(d.totalPnl)}">$${money(d.totalPnl)}</div></div>`;
-  $("reportRows").innerHTML = d.perSymbol.length? d.perSymbol.map(s=>`
-    <tr><td>${s.symbol}</td><td class="mono">${s.bought}</td><td class="mono">${s.sold}</td>
-      <td class="mono ${signClass(s.position)}">${s.position}</td>
-      <td class="mono">${s.avgBuy?'$'+money(s.avgBuy):'-'}</td>
-      <td class="mono">${s.avgSell?'$'+money(s.avgSell):'-'}</td>
-      <td class="mono">$${money(s.mark)}</td>
-      <td class="mono ${signClass(s.pnl)}">$${money(s.pnl)}</td></tr>`).join("")
-    : `<tr><td colspan="8" style="text-align:center;color:var(--muted)">No trades yet — place some orders first.</td></tr>`;
-  $("overlay").classList.add("show");
-}
-function closeReport(){ $("overlay").classList.remove("show"); }
-
-// ---------- polling ----------
-function selectSym(s){ SEL=s; setSide(SIDE); refresh(); }
-async function refresh(){
-  try{
-    const [syms,book,tape,mine]=await Promise.all([
-      getJSON("/api/symbols"),
-      getJSON("/api/book?symbol="+SEL+"&depth=10"),
-      getJSON("/api/trades?symbol="+SEL+"&limit=22"),
-      getJSON("/api/myorders")]);
-    renderWatch(syms); renderBook(book); renderTape(tape); renderMyOrders(mine);
-    $("clock").textContent = new Date().toLocaleTimeString();
-  }catch(e){ $("clock").textContent="reconnecting…"; }
-}
-setSide("BUY"); onTypeChange(); refresh();
-setInterval(refresh, 900);
-</script>
+  <script src="/assets/js/format.js"></script>
+  <script src="/assets/js/api.js"></script>
+  <script src="/assets/js/store.js"></script>
+  <script src="/assets/js/ui.js"></script>
+  <script src="/assets/js/terminal.js"></script>
 </body>
 </html>
