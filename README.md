@@ -1,4 +1,4 @@
-# Limit Order Book (LOB) & Matching Engine
+# Concurrent Order Processing & Matching Service
 
 A clean, well-tested **limit order book** with a **price/time-priority matching engine**, written in modern C++17. It is the data structure that sits at the heart of every electronic exchange (NASDAQ, NYSE, Binance, NSE…): it stores resting buy/sell orders and matches incoming orders against them.
 
